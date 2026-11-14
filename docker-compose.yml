@@ -1,0 +1,10 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: minefield-qdrant
+    restart: unless-stopped   # 再起動事故対策。第7章参照
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage

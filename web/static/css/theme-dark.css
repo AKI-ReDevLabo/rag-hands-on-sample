@@ -1,0 +1,50 @@
+/*
+ * カラーテーマ定義:ダーク(旧来の黒ベース)
+ *
+ * 使う場合は index.html の theme.css をこのファイルに差し替えます。
+ *
+ * UI で使う色はすべてここの変数で定義しています。
+ * style.css 側には色の値を直接書かず、必ずこの変数を参照してください。
+ * カラースキームを変更するときは、このファイルの値だけを書き換えれば
+ * 画面全体に反映されます。
+ */
+:root {
+  /* ベース */
+  --color-bg: #0f1115;            /* ページ全体の背景 */
+  --color-panel: #171a21;         /* 入力欄など一段浮いた面 */
+  --color-border: #2a2f3a;        /* 枠線・区切り線 */
+  --color-text: #e6e8ec;          /* 本文 */
+  --color-text-muted: #8b93a3;    /* 補足・ラベル */
+
+  /* ヘッダー */
+  --color-header-bg: var(--color-bg);
+  --color-header-text: var(--color-text);
+  --color-header-subtext: var(--color-text-muted);
+  --color-header-border: var(--color-border);
+
+  /* 主要アクション(送信ボタン・フォーカス) */
+  --color-primary: #4f8ef7;
+  --color-primary-hover: #3b7ae6;
+  --color-on-primary: #ffffff;    /* 主要色の上に載る文字 */
+  --color-focus: var(--color-primary);
+
+  /* 強調・差し色(スコア・出典の線など) */
+  --color-accent: #4f8ef7;
+  --color-accent-text: var(--color-accent);
+
+  /* チャット吹き出し */
+  --color-user-bubble: #2a3550;
+  --color-user-bubble-text: var(--color-text);
+  --color-ai-bubble: #1e222c;
+  --color-ai-bubble-text: var(--color-text);
+  --color-ai-bubble-border: var(--color-border);
+
+  /* 検索結果(出典) */
+  --color-source-bg: #12151b;
+  --color-source-border: var(--color-accent);
+
+  /* 状態表示 */
+  --color-warn: #e0a030;
+  --color-danger: #e05555;
+  --color-ok: #4fbf6a;
+}

@@ -1,0 +1,28 @@
+# チャットUI（FastAPI）を systemd で常駐させる。第7章「systemd と Nginx で本番化する」。
+#
+#   sudo cp deploy/rag-hands-on.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rag-hands-on
+#   journalctl -u rag-hands-on -f          # ログを見る
+#
+# /opt/rag-hands-on に配置し、.venv を作ってある前提。パスとユーザーは環境に合わせる。
+# .env はアプリ自身（core/config.py）が読むので、ここでは指定しない。
+
+[Unit]
+Description=rag-hands-on chat (FastAPI)
+# Qdrant は Docker で動かしているので、Docker の起動を待つ
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rag
+Group=rag
+WorkingDirectory=/opt/rag-hands-on
+# 外からは Nginx 経由でだけ受ける。127.0.0.1 に閉じておく
+ExecStart=/opt/rag-hands-on/.venv/bin/uvicorn web.main:app --host 127.0.0.1 --port 8080 --workers 2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

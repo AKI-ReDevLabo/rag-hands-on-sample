@@ -1,0 +1,58 @@
+/*
+ * カラーテーマ定義:緑物産株式会社(コーポレートカラー版)
+ *
+ * UI で使う色はすべてここの変数で定義しています。
+ * style.css 側には色の値を直接書かず、必ずこの変数を参照してください。
+ *
+ * コーポレートカラー
+ *   グリーン     #18733D … ロゴ・タイトル・主要ボタン(ブランドの主色)
+ *   ローズピンク #D94B68 … 強調・差し色
+ *
+ * 旧来の黒ベースに戻す場合は index.html の読み込み先を theme-dark.css に変更します。
+ */
+:root {
+  /* ブランドカラー(ここを変えると関連する色がまとめて変わります) */
+  --brand-green: #18733D;
+  --brand-green-dark: #115a2f;
+  --brand-rose: #D94B68;
+  --brand-rose-dark: #b8364f;     /* 白地の小さな文字用(コントラスト確保) */
+
+  /* ベース */
+  --color-bg: #fafaf7;            /* ページ全体の背景(オフホワイト) */
+  --color-panel: #ffffff;         /* 入力欄など一段浮いた面 */
+  --color-border: #dde5df;        /* 枠線・区切り線 */
+  --color-text: #1f2a24;          /* 本文 */
+  --color-text-muted: #6b7a71;    /* 補足・ラベル */
+
+  /* ヘッダー(ロゴ・タイトル) */
+  --color-header-bg: #ffffff;
+  --color-header-text: var(--brand-green);       /* 会社名・タイトル */
+  --color-header-subtext: var(--color-text-muted);
+  --color-header-border: var(--brand-green);
+
+  /* 主要アクション(送信ボタン・フォーカス) */
+  --color-primary: var(--brand-green);
+  --color-primary-hover: var(--brand-green-dark);
+  --color-on-primary: #ffffff;    /* 主要色の上に載る文字 */
+  --color-focus: var(--brand-green);
+
+  /* 強調・差し色(スコア・出典の線など) */
+  --color-accent: var(--brand-rose);
+  --color-accent-text: var(--brand-rose-dark);
+
+  /* チャット吹き出し */
+  --color-user-bubble: #fbe9ed;   /* ローズピンクの淡色 */
+  --color-user-bubble-text: var(--color-text);
+  --color-ai-bubble: #ffffff;
+  --color-ai-bubble-text: var(--color-text);
+  --color-ai-bubble-border: var(--color-border);
+
+  /* 検索結果(出典) */
+  --color-source-bg: #f2f7f3;     /* グリーンの淡色 */
+  --color-source-border: var(--brand-rose);
+
+  /* 状態表示 */
+  --color-warn: #a86a12;
+  --color-danger: #c62828;
+  --color-ok: var(--brand-green);
+}

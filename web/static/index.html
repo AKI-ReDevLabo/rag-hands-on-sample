@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rag-hands-on chat</title>
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<header>
+  <h1 class="brand">
+    <img class="brand-logo" src="/static/img/logo-green.png" alt="緑物産株式会社 ロゴ">
+    <span>
+      <span class="brand-name">緑物産株式会社</span>
+      <span class="brand-sub">rag-hands-on / 検証用チャットUI</span>
+    </span>
+  </h1>
+  <div id="status-bar"></div>
+</header>
+
+<div id="layout">
+  <aside id="threads">
+    <div class="threads-title">過去の話題</div>
+    <ul id="thread-list"></ul>
+  </aside>
+
+  <main id="main">
+    <div id="chat"></div>
+
+    <div id="inputbar">
+      <input id="q" type="text" placeholder="質問を入力..." autocomplete="off">
+      <button id="send">送信</button>
+      <button id="reset" class="secondary" title="今の話題を保存して、新しい話題を始める">新しい話題</button>
+    </div>
+  </main>
+</div>
+
+<script>
+// 過去の話題を残す件数。超えた分は古い順に消える。
+const MAX_THREADS = 50;
+// 過去の話題の保存先（このブラウザの localStorage）
+const STORAGE_KEY = 'rag-hands-on.threads';
+
+const chatEl = document.getElementById('chat');
+const qEl = document.getElementById('q');
+const sendEl = document.getElementById('send');
+const resetEl = document.getElementById('reset');
+const statusBar = document.getElementById('status-bar');
+const threadListEl = document.getElementById('thread-list');
+// 直前までのやりとり。2問目以降はこれをサーバーへ渡し、continuation として扱う。
+// 「新しい話題」を押すと空に戻る。
+let history = [];
+// 表示中の話題。messages には画面に出したものをそのまま残す。
+let current = newThread();
+
+function newThread() {
+  return { id: String(Date.now()), title: '', updatedAt: '', messages: [] };
+}
+
+// ---------- 保存 ----------
+// localStorage が使えない環境（プライベートブラウズ等）でもチャット自体は動かす。
+function loadThreads() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveThreads(threads) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads));
+  } catch (e) {
+    // 保存できなくても会話は続ける
+  }
+}
+
+function saveCurrent() {
+  if (current.messages.length === 0) return;
+  current.updatedAt = new Date().toISOString();
+  const threads = loadThreads().filter(t => t.id !== current.id);
+  threads.unshift(current);
+  saveThreads(threads.slice(0, MAX_THREADS));
+  renderThreadList();
+}
+
+// ---------- 過去の話題の一覧 ----------
+function formatDate(iso) {
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderThreadList() {
+  threadListEl.innerHTML = '';
+  const threads = loadThreads();
+  if (threads.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'thread-empty';
+    li.textContent = 'まだありません';
+    threadListEl.appendChild(li);
+    return;
+  }
+  threads.forEach(t => {
+    const li = document.createElement('li');
+    li.className = 'thread' + (t.id === current.id ? ' active' : '');
+    li.title = t.title;
+
+    const title = document.createElement('div');
+    title.className = 'thread-name';
+    title.textContent = t.title;
+    const meta = document.createElement('div');
+    meta.className = 'thread-meta';
+    meta.textContent = `${formatDate(t.updatedAt)} ・ ${t.messages.filter(m => m.role === 'user').length}問`;
+
+    const del = document.createElement('button');
+    del.className = 'thread-delete';
+    del.textContent = '×';
+    del.title = 'この話題を削除';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteThread(t.id);
+    });
+
+    li.append(title, meta, del);
+    li.addEventListener('click', () => openThread(t.id));
+    threadListEl.appendChild(li);
+  });
+}
+
+// 過去の話題を開く。回答を履歴に戻すので、そのまま追加質問もできる。
+function openThread(id) {
+  if (sendEl.disabled) return;  // 回答待ちの間は切り替えない
+  const t = loadThreads().find(t => t.id === id);
+  if (!t) return;
+  current = t;
+  history = [];
+  clearChat();
+  t.messages.forEach(m => {
+    if (m.role === 'user') {
+      addMessage('user', m.text);
+    } else {
+      renderAnswer(addMessage('ai', ''), m);
+    }
+  });
+  history = historyFrom(t.messages);
+  renderThreadList();
+  qEl.focus();
+}
+
+function deleteThread(id) {
+  if (sendEl.disabled) return;
+  if (!confirm('この話題を削除しますか？')) return;
+  saveThreads(loadThreads().filter(t => t.id !== id));
+  if (id === current.id) {
+    startNewTopic();
+  } else {
+    renderThreadList();
+  }
+}
+
+// 保存した messages から LLM に渡す履歴を組み立てる（回答が生成されたやりとりだけ）
+function historyFrom(messages) {
+  const turns = [];
+  for (let i = 0; i + 1 < messages.length; i++) {
+    const q = messages[i], a = messages[i + 1];
+    if (q.role === 'user' && a.role === 'ai' && a.answer) {
+      turns.push({ role: 'user', content: q.text }, { role: 'assistant', content: a.answer });
+    }
+  }
+  return turns;
+}
+
+// ---------- チャット表示 ----------
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const s = await res.json();
+    statusBar.innerHTML = `
+      <span class="badge">backend: ${s.embedding_backend}</span>
+      <span class="badge">chunks: ${s.chunk_count}</span>
+      <span class="badge ${s.llm_available ? 'ok' : ''}">${s.llm_available ? 'LLM: 有効' : 'LLM: 未設定'}</span>
+      <span class="badge ${s.rerank ? 'ok' : ''}">rerank: ${s.rerank ? (s.rerank_backend === 'keyword' ? 'keyword' : 'Haiku') : 'off'}</span>
+      <span class="badge ${s.bug_sparse_unstable_hash ? 'on' : ''}">sparse-bug: ${s.bug_sparse_unstable_hash ? 'ON' : 'off'}</span>
+      <span class="badge ${s.bug_orphan_chunks ? 'on' : ''}">orphan-bug: ${s.bug_orphan_chunks ? 'ON' : 'off'}</span>
+      <span class="badge ${s.bug_free_mode_routing ? 'on' : ''}">free-routing-bug: ${s.bug_free_mode_routing ? 'ON' : 'off'}</span>
+      <span class="badge ${s.bug_contradicting_rule ? 'on' : ''}">rule-conflict-bug: ${s.bug_contradicting_rule ? 'ON' : 'off'}</span>
+      <span class="badge ${s.bug_ignore_validity ? 'on' : ''}">validity-bug: ${s.bug_ignore_validity ? 'ON' : 'off'}</span>
+    `;
+  } catch (e) {
+    statusBar.innerHTML = '<span class="badge on">サーバーに接続できません</span>';
+  }
+}
+
+function clearChat() {
+  chatEl.innerHTML = `
+    <div class="empty-hint" id="hint">
+      質問を入力してください。<br>
+      例:「切り花 出荷」「乾燥ハーブ 返品」「出荷規格」
+    </div>`;
+}
+
+function addMessage(role, text) {
+  const hint = document.getElementById('hint');
+  if (hint) hint.remove();
+
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  chatEl.appendChild(wrap);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return wrap;
+}
+
+function stateLabel(state) {
+  if (state === 'nohit') return { text: '該当なし(nohit)', cls: 'nohit' };
+  if (state === 'continuation') return { text: '継続(continuation)', cls: '' };
+  if (state === 'free') return { text: '検索なし(free)', cls: 'nohit' };
+  if (state === 'structured') return { text: '構造化データ(structured)', cls: '' };
+  return { text: 'ヒット(hit)', cls: '' };
+}
+
+// 回答1件を描く。新しい回答にも、保存済みの回答にも使う。
+function renderAnswer(aiWrap, m) {
+  const bubble = aiWrap.querySelector('.bubble');
+  bubble.textContent = m.answer ?? '(回答生成なし。下の検索結果を参照してください)';
+
+  const label = stateLabel(m.state);
+  const tag = document.createElement('div');
+  tag.className = `state-tag ${label.cls}`;
+  tag.textContent = `state: ${label.text}`;
+  aiWrap.appendChild(tag);
+
+  if (m.search_query) {
+    const sq = document.createElement('div');
+    sq.className = 'note';
+    sq.textContent = `検索に使った文：${m.search_query}`;
+    aiWrap.appendChild(sq);
+  }
+
+  if (m.truncated) {
+    const t = document.createElement('div');
+    t.className = 'state-tag truncated';
+    t.textContent = `stop_reason: ${m.stop_reason} (回答が途中で切れています)`;
+    aiWrap.appendChild(t);
+  }
+
+  if (m.note) {
+    const note = document.createElement('div');
+    note.className = 'note';
+    note.textContent = m.note;
+    aiWrap.appendChild(note);
+  }
+
+  if (m.hits && m.hits.length > 0) {
+    const box = document.createElement('div');
+    box.className = 'sources';
+    m.hits.forEach(h => {
+      const s = document.createElement('div');
+      s.className = 'source';
+      const score = document.createElement('span');
+      score.className = 'score';
+      score.textContent = h.score.toFixed(3);
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = `[${h.source}]`;
+      s.append(score, ' ', name, ' ', h.snippet);
+      box.appendChild(s);
+    });
+    aiWrap.appendChild(box);
+  }
+}
+
+async function send() {
+  const question = qEl.value.trim();
+  if (!question) return;
+  qEl.value = '';
+  sendEl.disabled = true;
+
+  addMessage('user', question);
+  const aiWrap = addMessage('ai', '考え中...');
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, is_continuation: history.length > 0, history }),
+    });
+    const data = await res.json();
+    const m = {
+      role: 'ai',
+      answer: data.answer ?? null,
+      state: data.state,
+      truncated: data.truncated,
+      stop_reason: data.stop_reason,
+      note: data.note,
+      search_query: data.search_query ?? null,
+      hits: (data.hits || []).slice(0, 5).map(h => ({ score: h.score, source: h.source, snippet: h.snippet })),
+    };
+
+    // 回答が生成されたときだけ履歴に積む（LLM 未設定なら積まない）
+    if (m.answer) {
+      history.push({ role: 'user', content: question }, { role: 'assistant', content: m.answer });
+    }
+    renderAnswer(aiWrap, m);
+
+    if (current.messages.length === 0) current.title = question;
+    current.messages.push({ role: 'user', text: question }, m);
+    saveCurrent();
+  } catch (e) {
+    aiWrap.querySelector('.bubble').textContent = 'エラー: サーバーに接続できませんでした。';
+  } finally {
+    sendEl.disabled = false;
+    qEl.focus();
+  }
+}
+
+// 今の話題は送信のたびに保存済みなので、ここでは画面と履歴を空にするだけ
+function startNewTopic() {
+  if (sendEl.disabled) return;  // 回答待ちの間は切り替えない
+  current = newThread();
+  history = [];
+  clearChat();
+  renderThreadList();
+  qEl.focus();
+}
+
+sendEl.addEventListener('click', send);
+resetEl.addEventListener('click', startNewTopic);
+// 日本語入力の変換確定の Enter では送信しない
+qEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) send(); });
+
+clearChat();
+renderThreadList();
+loadStatus();
+setInterval(loadStatus, 5000);
+</script>
+
+</body>
+</html>
